@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ultra HD Julia Escape-Time Explorer</title>
+<style>
+
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+    color:white;
+    font-family:Arial,sans-serif;
+}
+
+#ui{
+    position:fixed;
+    top:10px;
+    left:10px;
+    z-index:100;
+
+    background:rgba(0,0,0,0.75);
+    padding:12px;
+    border-radius:10px;
+
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+}
+
+input,button{
+    background:#111;
+    color:white;
+    border:1px solid #555;
+    border-radius:5px;
+    padding:6px 10px;
+}
+
+button:hover{
+    background:#333;
+    cursor:pointer;
+}
+
+canvas{
+    display:block;
+    width:100vw;
+    height:100vh;
+    cursor:grab;
+}
+
+canvas:active{
+    cursor:grabbing;
+}
+
+#legend{
+    position:fixed;
+    right:20px;
+    top:20px;
+    width:40px;
+    height:300px;
+
+    border:1px solid white;
+    background:black;
+
+    z-index:100;
+}
+
+#legendLabels{
+    position:fixed;
+    right:65px;
+    top:20px;
+    height:300px;
+
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+
+    color:white;
+    font-size:12px;
+
+    z-index:100;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+
+    <label>
+        c =
+        <input id="cInput" value="-0.5125+0.5213i" size="18">
+    </label>
+
+    <button id="applyBtn">Apply</button>
+
+    <button id="resetBtn">Reset</button>
+
+    <label>
+        Iterations
+        <input id="iterInput"
+               type="number"
+               value="2500"
+               min="100"
+               max="50000"
+               step="100">
+    </label>
+
+</div>
+
+<canvas id="canvas"></canvas>
+
+<canvas id="legend"></canvas>
+
+<div id="legendLabels">
+    <div>Fast Escape</div>
+    <div>Slow Escape</div>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const legendCanvas = document.getElementById("legend");
+const legendCtx = legendCanvas.getContext("2d");
+
+const cInput = document.getElementById("cInput");
+const iterInput = document.getElementById("iterInput");
+
+let width;
+let height;
+
+let cRe = -1;
+let cIm = 0;
+
+let centerX = 0.0;
+let centerY = 0.0;
+
+let scale = 3.0;
+
+let maxIter = 2500;
+
+// Lower escape radius = much better contrast
+const escapeRadius = 4.0;
+
+function resizeCanvas(){
+
+    const dpr = window.devicePixelRatio || 1;
+
+    width = Math.floor(window.innerWidth * dpr);
+    height = Math.floor(window.innerHeight * dpr);
+
+    canvas.width = width;
+    canvas.height = height;
+
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+
+    drawLegend();
+    drawJulia(false);
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+// =====================================================
+// Complex parser
+// =====================================================
+
+function parseComplex(str){
+
+    str = str.trim()
+             .replace(/\s+/g,"")
+             .replace(/i/g,"j")
+             .toLowerCase();
+
+    let re = 0;
+    let im = 0;
+
+    if(str.includes("j")){
+
+        str = str.replace("j","");
+
+        let idx = -1;
+
+        for(let i=1;i<str.length;i++){
+            if(str[i] === "+" || str[i] === "-"){
+                idx = i;
+            }
+        }
+
+        if(idx === -1){
+
+            re = 0;
+            im = parseFloat(str);
+
+        }else{
+
+            re = parseFloat(str.slice(0,idx));
+            im = parseFloat(str.slice(idx));
+        }
+
+    }else{
+
+        re = parseFloat(str);
+        im = 0;
+    }
+
+    if(isNaN(re) || isNaN(im)){
+        throw new Error("Invalid complex number");
+    }
+
+    return {re,im};
+}
+
+function palette(t){
+
+    const r =
+        Math.floor(
+            128 + 127 *
+            Math.cos(6.28318 * (t + 0.00))
+        );
+
+    const g =
+        Math.floor(
+            128 + 127 *
+            Math.cos(6.28318 * (t + 0.15))
+        );
+
+    const b =
+        Math.floor(
+            128 + 127 *
+            Math.cos(6.28318 * (t + 0.35))
+        );
+
+    return [r,g,b];
+}
+
+function drawLegend(){
+
+    const w = legendCanvas.width = 40;
+    const h = legendCanvas.height = 300;
+
+    const image =
+        legendCtx.createImageData(w,h);
+
+    const data = image.data;
+
+    for(let y=0;y<h;y++){
+
+        const t =
+            (h - y) / h * 8.0;
+
+        const [r,g,b] = palette(t);
+
+        for(let x=0;x<w;x++){
+
+            const idx = 4 * (y*w + x);
+
+            data[idx] = r;
+            data[idx+1] = g;
+            data[idx+2] = b;
+            data[idx+3] = 255;
+        }
+    }
+
+    legendCtx.putImageData(image,0,0);
+}
+
+function drawJulia(fast=false){
+
+    const image =
+        ctx.createImageData(width,height);
+
+    const data = image.data;
+
+    const aspect = width / height;
+
+    const viewWidth = scale;
+    const viewHeight = scale / aspect;
+
+    const escape2 =
+        escapeRadius * escapeRadius;
+
+    const step = fast ? 2 : 1;
+
+    const iterLimit =
+        fast
+        ? Math.floor(maxIter * 0.15)
+        : maxIter;
+
+    for(let py=0;py<height;py+=step){
+
+        const y =
+            centerY +
+            (py/height - 0.5) * viewHeight;
+
+        for(let px=0;px<width;px+=step){
+
+            const x =
+                centerX +
+                (px/width - 0.5) * viewWidth;
+
+            let zr = x;
+            let zi = y;
+
+            let iter = 0;
+
+            while(iter < iterLimit){
+
+                const zr2 = zr*zr;
+                const zi2 = zi*zi;
+
+                if(zr2 + zi2 > escape2){
+                    break;
+                }
+
+                const temp =
+                    zr2 - zi2 + cRe;
+
+                zi = 2*zr*zi + cIm;
+                zr = temp;
+
+                iter++;
+            }
+
+            let r,g,b;
+
+            if(iter >= iterLimit){
+
+                r = 4;
+                g = 0;
+                b = 10;
+
+            }else{
+
+                const mag =
+                    Math.sqrt(zr*zr + zi*zi);
+
+                const smooth =
+                    iter + 1 -
+                    Math.log2(
+                        Math.log2(mag)
+                    );
+
+                // Faster palette motion
+                const t =
+                    smooth * 0.045;
+
+                [r,g,b] = palette(t);
+
+                r =
+                    Math.pow(r / 255, 0.75) * 255;
+
+                g =
+                    Math.pow(g / 255, 0.75) * 255;
+
+                b =
+                    Math.pow(b / 255, 0.75) * 255;
+
+                const glow =
+                    1.35 +
+                    0.25 *
+                    Math.sin(smooth * 0.15);
+
+                r *= glow;
+                g *= glow;
+                b *= glow;
+
+                r = Math.min(255, r);
+                g = Math.min(255, g);
+                b = Math.min(255, b);
+            }
+
+            for(let dy=0;dy<step;dy++){
+
+                const py2 = py + dy;
+
+                if(py2 >= height) break;
+
+                for(let dx=0;dx<step;dx++){
+
+                    const px2 = px + dx;
+
+                    if(px2 >= width) break;
+
+                    const idx =
+                        4 * (py2*width + px2);
+
+                    data[idx] = r;
+                    data[idx+1] = g;
+                    data[idx+2] = b;
+                    data[idx+3] = 255;
+                }
+            }
+        }
+    }
+
+    ctx.filter =
+        "brightness(115%) contrast(125%) saturate(135%)";
+
+    ctx.putImageData(image,0,0);
+
+    ctx.filter = "none";
+}
+
+
+let renderTimeout = null;
+
+function scheduleHQRender(){
+
+    if(renderTimeout){
+        clearTimeout(renderTimeout);
+    }
+
+    renderTimeout =
+        setTimeout(()=>{
+
+            renderTimeout = null;
+
+            drawJulia(false);
+
+        },80);
+}
+
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+canvas.addEventListener("mousedown",(e)=>{
+
+    dragging = true;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+window.addEventListener("mouseup",()=>{
+    dragging = false;
+});
+window.addEventListener("mousemove",(e)=>{
+
+    if(!dragging) return;
+
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    const aspect =
+        width / height;
+
+    const viewWidth = scale;
+    const viewHeight =
+        scale / aspect;
+
+    centerX -= dx/width * viewWidth;
+    centerY += dy/height * viewHeight;
+
+    drawJulia(true);
+
+    scheduleHQRender();
+});
+canvas.addEventListener(
+    "wheel",
+    (e)=>{
+
+    e.preventDefault();
+
+    const rect =
+        canvas.getBoundingClientRect();
+
+    const mouseX =
+        (e.clientX - rect.left)
+        * (width / rect.width);
+
+    const mouseY =
+        (e.clientY - rect.top)
+        * (height / rect.height);
+
+    const aspect =
+        width / height;
+
+    const viewWidth = scale;
+    const viewHeight =
+        scale / aspect;
+
+    const xBefore =
+        centerX +
+        (mouseX/width - 0.5)
+        * viewWidth;
+
+    const yBefore =
+        centerY +
+        (mouseY/height - 0.5)
+        * viewHeight;
+
+    const zoom =
+        Math.exp(-e.deltaY * 0.001);
+
+    scale *= zoom;
+
+    const newViewWidth = scale;
+    const newViewHeight =
+        scale / aspect;
+
+    const xAfter =
+        centerX +
+        (mouseX/width - 0.5)
+        * newViewWidth;
+
+    const yAfter =
+        centerY +
+        (mouseY/height - 0.5)
+        * newViewHeight;
+
+    centerX += xBefore - xAfter;
+    centerY += yBefore - yAfter;
+    drawJulia(true);
+    scheduleHQRender();
+},{passive:false});
+document
+.getElementById("applyBtn")
+.addEventListener("click",()=>{
+    try{
+
+        const parsed =
+            parseComplex(cInput.value);
+
+        cRe = parsed.re;
+        cIm = parsed.im;
+
+        maxIter =
+            parseInt(iterInput.value);
+
+        drawJulia(false);
+
+    }catch{
+
+        alert(
+            "Invalid complex number"
+        );
+    }
+});
+document
+.getElementById("resetBtn")
+.addEventListener("click",()=>{
+
+    centerX = 0.0;
+    centerY = 0.0;
+
+    scale = 3.0;
+
+    drawJulia(false);
+});
+resizeCanvas();
+</script>
+</body>
+</html>
