@@ -38,10 +38,6 @@ def julia_set(c,
     return iter_counts
 
 
-# ---------------------------
-# Interactive Viewer
-# ---------------------------
-
 class JuliaViewer:
     def __init__(self, c):
         self.c = c
@@ -75,16 +71,13 @@ class JuliaViewer:
         self.ax.set_title(f"Julia Set for c = {self.c}")
         self.fig.canvas.draw_idle()
 
-    # Zoom with mouse wheel
     def on_scroll(self, event):
-        # event.step is +1 for scroll up, -1 for scroll down (also on many trackpads)
         if event.xdata is None or event.ydata is None:
             return
 
-        # Choose zoom factor based on scroll direction
-        if event.step > 0:       # scroll up -> zoom in
+        if event.step > 0:      
             zoom_factor = 0.8
-        else:                    # scroll down -> zoom out
+        else:                   
             zoom_factor = 1.25
 
         mouse_x = event.xdata
@@ -97,12 +90,10 @@ class JuliaViewer:
 
         self.update_plot()
 
-    # Start dragging
     def on_press(self, event):
-        if event.button == 1:  # left mouse button
+        if event.button == 1: 
             self.drag_start = (event.xdata, event.ydata)
 
-    # Drag/pan
     def on_drag(self, event):
         if self.drag_start is None:
             return
@@ -121,7 +112,6 @@ class JuliaViewer:
         self.drag_start = (event.xdata, event.ydata)
         self.update_plot()
 
-    # Reset with 'r'
     def on_key(self, event):
         if event.key == "r":
             self.x_min, self.x_max = -1.5, 1.5
@@ -130,7 +120,6 @@ class JuliaViewer:
 
 
 def main():
-    # Change c here or make this user input if you prefer
     c = complex(input("Enter c (example: -0.8+0.156j): "))
     JuliaViewer(c)
     plt.show()
