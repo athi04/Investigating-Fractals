@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title> Mandelbrot Explorer</title>
+
+<style>
+
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+    color:white;
+    font-family:Arial,sans-serif;
+}
+
+#ui{
+    position:fixed;
+    top:10px;
+    left:10px;
+    z-index:100;
+
+    background:rgba(0,0,0,0.75);
+    padding:12px;
+    border-radius:10px;
+
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+}
+
+input,button{
+    background:#111;
+    color:white;
+    border:1px solid #555;
+    border-radius:5px;
+    padding:6px 10px;
+}
+
+button:hover{
+    background:#333;
+    cursor:pointer;
+}
+
+canvas{
+    display:block;
+    width:100vw;
+    height:100vh;
+    cursor:grab;
+}
+
+canvas:active{
+    cursor:grabbing;
+}
+
+#legend{
+    position:fixed;
+    right:20px;
+    top:20px;
+    width:40px;
+    height:300px;
+
+    border:1px solid white;
+    background:black;
+
+    z-index:100;
+}
+
+#legendLabels{
+    position:fixed;
+    right:65px;
+    top:20px;
+    height:300px;
+
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+
+    color:white;
+    font-size:12px;
+
+    z-index:100;
+}
+
+#coords{
+    position:fixed;
+    bottom:15px;
+    left:15px;
+
+    background:rgba(0,0,0,0.7);
+    padding:8px 12px;
+    border-radius:8px;
+
+    font-size:13px;
+
+    z-index:100;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+
+    <button id="resetBtn">Reset</button>
+
+    <label>
+        Iterations
+        <input id="iterInput"
+               type="number"
+               value="2500"
+               min="100"
+               max="50000"
+               step="100">
+    </label>
+
+    <button id="renderBtn">Render</button>
+
+</div>
+
+<canvas id="canvas"></canvas>
+
+<canvas id="legend"></canvas>
+
+<div id="legendLabels">
+    <div>Fast Escape</div>
+    <div>Slow Escape</div>
+</div>
+
+<div id="coords"></div>
+
+<script>
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const legendCanvas = document.getElementById("legend");
+const legendCtx = legendCanvas.getContext("2d");
+
+const iterInput = document.getElementById("iterInput");
+const coordsBox = document.getElementById("coords");
+
+let width;
+let height;
+
+// Mandelbrot default center
+let centerX = -0.5;
+let centerY = 0.0;
+
+let scale = 3.2;
+
+let maxIter = 2500;
+
+const escapeRadius = 4.0;
+
+// =====================================================
+// Resize
+// =====================================================
+
+function resizeCanvas(){
+
+    const dpr = window.devicePixelRatio || 1;
+
+    width = Math.floor(window.innerWidth * dpr);
+    height = Math.floor(window.innerHeight * dpr);
+
+    canvas.width = width;
+    canvas.height = height;
+
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+
+    drawLegend();
+    drawMandelbrot(false);
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+function palette(t){
+
+    const r =
+        Math.floor(
+            128 + 127 *
+            Math.cos(6.28318 * (t + 0.00))
+        );
+
+    const g =
+        Math.floor(
+            128 + 127 *
+            Math.cos(6.28318 * (t + 0.15))
+        );
+
+    const b =
+        Math.floor(
+            128 + 127 *
+            Math.cos(6.28318 * (t + 0.35))
+        );
+
+    return [r,g,b];
+}
+
+// =====================================================
+// Legend
+// =====================================================
+
+function drawLegend(){
+
+    const w = legendCanvas.width = 40;
+    const h = legendCanvas.height = 300;
+
+    const image =
+        legendCtx.createImageData(w,h);
+
+    const data = image.data;
+
+    for(let y=0;y<h;y++){
+
+        const t =
+            (h - y) / h * 8.0;
+
+        const [r,g,b] = palette(t);
+
+        for(let x=0;x<w;x++){
+
+            const idx = 4 * (y*w + x);
+
+            data[idx] = r;
+            data[idx+1] = g;
+            data[idx+2] = b;
+            data[idx+3] = 255;
+        }
+    }
+
+    legendCtx.putImageData(image,0,0);
+}
+
+// =====================================================
+// Mandelbrot Renderer
+// =====================================================
+
+function drawMandelbrot(fast=false){
+
+    const image =
+        ctx.createImageData(width,height);
+
+    const data = image.data;
+
+    const aspect = width / height;
+
+    const viewWidth = scale;
+    const viewHeight = scale / aspect;
+
+    const escape2 =
+        escapeRadius * escapeRadius;
+
+    const step = fast ? 2 : 1;
+
+    const iterLimit =
+        fast
+        ? Math.floor(maxIter * 0.15)
+        : maxIter;
+
+    for(let py=0; py<height; py+=step){
+
+        const cy =
+            centerY +
+            (py/height - 0.5) * viewHeight;
+
+        for(let px=0; px<width; px+=step){
+
+            const cx =
+                centerX +
+                (px/width - 0.5) * viewWidth;
+
+            // Mandelbrot:
+            // z_{n+1} = z_n² + c
+            // z_0 = 0
+
+            let zr = 0;
+            let zi = 0;
+
+            let iter = 0;
+
+            while(iter < iterLimit){
+
+                const zr2 = zr*zr;
+                const zi2 = zi*zi;
+
+                if(zr2 + zi2 > escape2){
+                    break;
+                }
+
+                const temp =
+                    zr2 - zi2 + cx;
+
+                zi = 2*zr*zi + cy;
+                zr = temp;
+
+                iter++;
+            }
+
+            let r,g,b;
+
+            if(iter >= iterLimit){
+
+                r = 4;
+                g = 0;
+                b = 10;
+
+            }else{
+
+                const mag =
+                    Math.sqrt(zr*zr + zi*zi);
+
+                const smooth =
+                    iter + 1 -
+                    Math.log2(
+                        Math.log2(mag)
+                    );
+
+                const t =
+                    smooth * 0.045;
+
+                [r,g,b] = palette(t);
+
+                r =
+                    Math.pow(r / 255, 0.75) * 255;
+
+                g =
+                    Math.pow(g / 255, 0.75) * 255;
+
+                b =
+                    Math.pow(b / 255, 0.75) * 255;
+
+                const glow =
+                    1.35 +
+                    0.25 *
+                    Math.sin(smooth * 0.15);
+
+                r *= glow;
+                g *= glow;
+                b *= glow;
+
+                r = Math.min(255, r);
+                g = Math.min(255, g);
+                b = Math.min(255, b);
+            }
+
+            for(let dy=0; dy<step; dy++){
+
+                const py2 = py + dy;
+
+                if(py2 >= height) break;
+
+                for(let dx=0; dx<step; dx++){
+
+                    const px2 = px + dx;
+
+                    if(px2 >= width) break;
+
+                    const idx =
+                        4 * (py2*width + px2);
+
+                    data[idx] = r;
+                    data[idx+1] = g;
+                    data[idx+2] = b;
+                    data[idx+3] = 255;
+                }
+            }
+        }
+    }
+
+    ctx.filter =
+        "brightness(115%) contrast(125%) saturate(135%)";
+
+    ctx.putImageData(image,0,0);
+
+    ctx.filter = "none";
+
+    updateCoords();
+}
+
+function updateCoords(){
+
+    coordsBox.innerHTML =
+        `
+        Center:
+        ${centerX.toFixed(10)}
+        +
+        ${centerY.toFixed(10)}i
+        <br>
+        Scale:
+        ${scale.toExponential(3)}
+        `;
+}
+
+let renderTimeout = null;
+
+function scheduleHQRender(){
+
+    if(renderTimeout){
+        clearTimeout(renderTimeout);
+    }
+
+    renderTimeout =
+        setTimeout(()=>{
+
+            renderTimeout = null;
+
+            drawMandelbrot(false);
+
+        },80);
+}
+
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+canvas.addEventListener("mousedown",(e)=>{
+
+    dragging = true;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+
+window.addEventListener("mouseup",()=>{
+    dragging = false;
+});
+
+window.addEventListener("mousemove",(e)=>{
+
+    if(!dragging) return;
+
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    const aspect =
+        width / height;
+
+    const viewWidth = scale;
+    const viewHeight =
+        scale / aspect;
+
+    centerX -= dx/width * viewWidth;
+    centerY += dy/height * viewHeight;
+
+    drawMandelbrot(true);
+
+    scheduleHQRender();
+});
+
+canvas.addEventListener(
+    "wheel",
+    (e)=>{
+
+    e.preventDefault();
+
+    const rect =
+        canvas.getBoundingClientRect();
+
+    const mouseX =
+        (e.clientX - rect.left)
+        * (width / rect.width);
+
+    const mouseY =
+        (e.clientY - rect.top)
+        * (height / rect.height);
+
+    const aspect =
+        width / height;
+
+    const viewWidth = scale;
+    const viewHeight =
+        scale / aspect;
+
+    const xBefore =
+        centerX +
+        (mouseX/width - 0.5)
+        * viewWidth;
+
+    const yBefore =
+        centerY +
+        (mouseY/height - 0.5)
+        * viewHeight;
+
+    const zoom =
+        Math.exp(-e.deltaY * 0.001);
+
+    scale *= zoom;
+
+    const newViewWidth = scale;
+    const newViewHeight =
+        scale / aspect;
+
+    const xAfter =
+        centerX +
+        (mouseX/width - 0.5)
+        * newViewWidth;
+
+    const yAfter =
+        centerY +
+        (mouseY/height - 0.5)
+        * newViewHeight;
+
+    centerX += xBefore - xAfter;
+    centerY += yBefore - yAfter;
+
+    drawMandelbrot(true);
+
+    scheduleHQRender();
+
+},{passive:false});
+
+document
+.getElementById("renderBtn")
+.addEventListener("click",()=>{
+
+    maxIter =
+        parseInt(iterInput.value);
+
+    drawMandelbrot(false);
+});
+
+document
+.getElementById("resetBtn")
+.addEventListener("click",()=>{
+
+    centerX = -0.5;
+    centerY = 0.0;
+
+    scale = 3.2;
+
+    drawMandelbrot(false);
+});
+
+resizeCanvas();
+
+</script>
+</body>
+</html>
