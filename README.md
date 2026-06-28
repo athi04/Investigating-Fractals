@@ -16,6 +16,12 @@ Julia and Mandelbrot sets.
 | `julia.html` | **Interactive Julia set explorer.** Renders the filled Julia set for a chosen complex parameter *c*, computed in the browser. |
 | `mandelbrot.html` | **Interactive Mandelbrot set explorer.** Renders the Mandelbrot set with zoom, computed in the browser. |
 
+## Live demos
+
+- **▶ [Julia set explorer](https://athi04.github.io/Investigating-Fractals/julia.html)** — render the filled Julia set for a chosen complex parameter *c*.
+- **▶ [Mandelbrot set explorer](https://athi04.github.io/Investigating-Fractals/mandelbrot.html)** — explore the Mandelbrot set in the browser.
+
+
 ## Background
 
 A fractal is a set whose structure repeats across scales, typically with a
