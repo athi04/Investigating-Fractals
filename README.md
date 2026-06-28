@@ -45,6 +45,6 @@ Each script opens a figure and saves image files next to the script.
 
 ## Running the interactive explorers
 
-`julia.html` and `mandelbrot.html` are self-contained — no build step or server
+`julia.html` and `mandelbrot.html` are self-contained, no build step or server
 needed. Either open the file directly in a browser, or view them live via
 GitHub Pages (Settings → Pages → deploy from the `main` branch).
